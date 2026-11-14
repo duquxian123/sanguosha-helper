@@ -1,0 +1,12 @@
+node_modules/
+.venv/
+.npm-cache/
+.debug/
+logs/
+dist/
+.tmp-event-log.png
+.DS_Store
+*.log
+.env
+.env.*
+!.env.example

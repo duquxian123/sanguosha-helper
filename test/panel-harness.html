@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>房间助手浮窗交互测试</title>
+    <style>
+      html,
+      body {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        overflow: hidden;
+        background:
+          radial-gradient(circle at 20% 20%, rgba(106, 80, 45, 0.35), transparent 42%),
+          #151a18;
+        color: #d9d0be;
+        font-family: "Microsoft YaHei UI", sans-serif;
+      }
+
+      main {
+        padding: 50px;
+      }
+
+      h1 {
+        margin: 0 0 12px;
+        font-family: KaiTi, serif;
+        font-weight: 500;
+      }
+
+      p {
+        color: #92a09d;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>房间助手浮窗交互测试</h1>
+      <p>拖动标题栏移动浮窗，点击右侧按钮收起或展开。刷新页面检查状态是否恢复。</p>
+    </main>
+    <script>
+      const STORAGE_PREFIX = "rooms-helper-panel-harness:";
+      const db = {};
+      for (let index = 0; index < localStorage.length; index += 1) {
+        const key = localStorage.key(index);
+        if (key.startsWith(STORAGE_PREFIX)) {
+          db[key.slice(STORAGE_PREFIX.length)] = JSON.parse(localStorage.getItem(key));
+        }
+      }
+
+      window.chrome = {
+        runtime: {
+          getManifest: () => ({ version: "0.11.1" }),
+          onMessage: { addListener(listener) { window.__roomsHelperListener = listener; } },
+          sendMessage: async (message) => {
+            if (message.type === "ROOMS_HELPER_GET_SESSION") {
+              return { ok: true, enabled: false, settings: null };
+            }
+            if (message.type === "ROOMS_HELPER_STATUS") return { ok: true };
+            return { ok: true };
+          },
+        },
+        storage: {
+          local: {
+            async get(key) {
+              return typeof key === "string" && Object.hasOwn(db, key)
+                ? { [key]: db[key] }
+                : {};
+            },
+            async set(values) {
+              Object.assign(db, values);
+              for (const [key, value] of Object.entries(values)) {
+                localStorage.setItem(`${STORAGE_PREFIX}${key}`, JSON.stringify(value));
+              }
+            },
+          },
+          onChanged: { addListener() {} },
+        },
+      };
+    </script>
+    <script src="../extension/panel-state.js"></script>
+    <script src="../extension/content.js"></script>
+  </body>
+</html>

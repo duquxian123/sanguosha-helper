@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "三国杀房间监控助手",
+  "version": "0.12.0",
+  "description": "实时筛选三国杀大厅房间，并以绿色高亮符合条件的等待房间。",
+  "minimum_chrome_version": "116",
+  "permissions": ["activeTab", "debugger", "storage"],
+  "host_permissions": ["https://web.sanguosha.com/*"],
+  "action": {
+    "default_title": "三国杀房间监控助手",
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://web.sanguosha.com/*"],
+      "js": ["lobby-data.js", "lobby-runtime.js"],
+      "run_at": "document_idle",
+      "world": "MAIN"
+    },
+    {
+      "matches": ["https://web.sanguosha.com/*"],
+      "js": ["diagnostics.js", "lobby-data.js", "panel-state.js", "content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

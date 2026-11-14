@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>三国杀房间监控助手</title>
+    <link rel="stylesheet" href="./popup.css" />
+  </head>
+  <body>
+    <main class="popup">
+      <header>
+        <div>
+          <p class="eyebrow">ROOM HELPER</p>
+          <h1>房间监控助手</h1>
+        </div>
+        <span id="version"></span>
+      </header>
+      <p class="hint">
+        设置和刷新操作位于游戏右下角浮窗。这里用于导出诊断日志。
+      </p>
+      <button id="copyLog" type="button">复制 Log</button>
+      <p id="status">点击后将复制扩展、页面和运行状态日志。</p>
+    </main>
+    <script src="./popup.js"></script>
+  </body>
+</html>

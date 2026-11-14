@@ -1,0 +1,95 @@
+:root {
+  color-scheme: dark;
+  --bg: #0c1112;
+  --gold: #d8b266;
+  --line: rgba(222, 188, 111, 0.24);
+  --text: #e8deca;
+  --muted: #84938f;
+  --green: #65d38a;
+  --red: #d47768;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  width: 330px;
+  margin: 0;
+  background:
+    radial-gradient(circle at 90% -10%, rgba(129, 84, 36, 0.27), transparent 42%),
+    var(--bg);
+  color: var(--text);
+  font: 12px/1.5 "Microsoft YaHei UI", "PingFang SC", sans-serif;
+}
+
+.popup {
+  padding: 16px;
+}
+
+header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.eyebrow {
+  margin: 0 0 2px;
+  color: var(--gold);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+}
+
+h1 {
+  margin: 0;
+  font-family: KaiTi, "Microsoft YaHei UI", sans-serif;
+  font-size: 21px;
+  font-weight: 600;
+}
+
+#version {
+  padding: 3px 7px;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  font: 10px/1.2 Georgia, serif;
+}
+
+.hint {
+  margin: 12px 0;
+  color: var(--muted);
+  line-height: 1.65;
+}
+
+button {
+  width: 100%;
+  min-height: 38px;
+  border: 1px solid rgba(216, 178, 102, 0.5);
+  border-radius: 2px;
+  background: linear-gradient(135deg, #a77f3f, #664a21);
+  color: #fff1cd;
+  font: 700 13px "Microsoft YaHei UI", sans-serif;
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+#status {
+  min-height: 34px;
+  margin: 10px 0 0;
+  padding: 8px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.018);
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.55;
+}
+
+#status.ok { color: var(--green); }
+#status.error { color: var(--red); }
