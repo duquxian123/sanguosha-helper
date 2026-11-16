@@ -7,7 +7,7 @@ const {
   clampPanelPosition,
   normalizePanelState,
   normalizeRefreshInterval,
-  shouldPauseAutoRefresh,
+  shouldDisableAutoRefreshAfterRefresh,
 } = globalThis.SanGuoShaPanelState;
 
 test("normalizes saved panel state without trusting malformed values", () => {
@@ -60,9 +60,9 @@ test("limits automatic refresh interval to five through fifteen seconds", () => 
   assert.equal(normalizeRefreshInterval(20), 15);
 });
 
-test("pauses automatic refresh only after an automatic run finds rooms", () => {
+test("disables automatic refresh only after an automatic run finds rooms", () => {
   assert.equal(
-    shouldPauseAutoRefresh({
+    shouldDisableAutoRefreshAfterRefresh({
       trigger: "auto",
       autoRefreshEnabled: true,
       matchingRoomCount: 1,
@@ -70,7 +70,7 @@ test("pauses automatic refresh only after an automatic run finds rooms", () => {
     true,
   );
   assert.equal(
-    shouldPauseAutoRefresh({
+    shouldDisableAutoRefreshAfterRefresh({
       trigger: "auto",
       autoRefreshEnabled: true,
       matchingRoomCount: 0,
@@ -78,14 +78,14 @@ test("pauses automatic refresh only after an automatic run finds rooms", () => {
     false,
   );
   assert.equal(
-    shouldPauseAutoRefresh({
+    shouldDisableAutoRefreshAfterRefresh({
       trigger: "auto",
       autoRefreshEnabled: true,
     }),
     false,
   );
   assert.equal(
-    shouldPauseAutoRefresh({
+    shouldDisableAutoRefreshAfterRefresh({
       trigger: "manual",
       autoRefreshEnabled: true,
       matchingRoomCount: 2,
@@ -93,7 +93,7 @@ test("pauses automatic refresh only after an automatic run finds rooms", () => {
     false,
   );
   assert.equal(
-    shouldPauseAutoRefresh({
+    shouldDisableAutoRefreshAfterRefresh({
       trigger: "auto",
       autoRefreshEnabled: false,
       matchingRoomCount: 1,

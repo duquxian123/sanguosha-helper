@@ -57,7 +57,7 @@
     );
   }
 
-  function shouldPauseAutoRefresh({
+  function shouldDisableAutoRefreshAfterRefresh({
     trigger,
     autoRefreshEnabled,
     matchingRoomCount,
@@ -79,6 +79,6 @@
     clampPanelPosition,
     normalizeRefreshInterval,
     normalizePanelState,
-    shouldPauseAutoRefresh,
+    shouldDisableAutoRefreshAfterRefresh,
   });
 })(globalThis);

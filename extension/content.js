@@ -71,7 +71,7 @@
     clampPanelPosition,
     normalizePanelState,
     normalizeRefreshInterval,
-    shouldPauseAutoRefresh,
+    shouldDisableAutoRefreshAfterRefresh,
   } =
     globalThis.SanGuoShaPanelState;
 
@@ -573,7 +573,6 @@
   let progressTimer = null;
   let nextRefreshAt = 0;
   let pausedRemainingMs = null;
-  let autoRefreshPausedForMatch = false;
   const runtimeCommands = new Map();
 
   function setError(message = "") {
@@ -776,21 +775,6 @@
       refs.progress.setAttribute("aria-valuetext", "正在刷新");
       return;
     }
-    if (autoRefreshPausedForMatch) {
-      refs.progressFill.style.width = "100%";
-      refs.nextRefresh.textContent = "已找到房源 · 自动刷新暂停";
-      refs.progressState.textContent = "手动继续";
-      refs.progress.setAttribute(
-        "aria-valuenow",
-        String(settings.refreshIntervalSeconds),
-      );
-      refs.progress.setAttribute(
-        "aria-valuetext",
-        "已找到符合条件的房源，自动刷新已暂停",
-      );
-      return;
-    }
-
     let remainingMs;
     if (document.visibilityState !== "visible") {
       remainingMs =
@@ -824,7 +808,6 @@
   }
 
   function scheduleAutoRefresh(delayMs = settings.refreshIntervalSeconds * 1000) {
-    autoRefreshPausedForMatch = false;
     clearAutoTimers();
     pausedRemainingMs = null;
     if (!settings.autoRefreshEnabled) {
@@ -845,15 +828,21 @@
     }, delayMs);
   }
 
-  function pauseAutoRefreshForMatch() {
+  async function disableAutoRefreshAfterMatch() {
+    settings = { ...settings, autoRefreshEnabled: false };
+    refs.autoRefresh.checked = false;
     clearAutoTimers();
     pausedRemainingMs = null;
-    autoRefreshPausedForMatch = true;
     updateAutoProgress();
+    diagnostics?.log("auto-refresh.stopped-after-match", {
+      matchingRooms: lastRuntimeSnapshot?.highlights?.length || 0,
+    });
+    await chrome.storage.local
+      .set({ [SETTINGS_KEY]: settings })
+      .catch(() => undefined);
   }
 
   function restartAutoRefresh() {
-    autoRefreshPausedForMatch = false;
     clearAutoTimers();
     pausedRemainingMs = null;
     if (!settings.autoRefreshEnabled) {
@@ -941,7 +930,12 @@
 
   async function manualRefresh({ trigger = "manual" } = {}) {
     if (manualBusy) return;
-    autoRefreshPausedForMatch = false;
+    const stoppedAutoForManual =
+      trigger === "manual" && settings.autoRefreshEnabled;
+    if (stoppedAutoForManual) {
+      settings = { ...settings, autoRefreshEnabled: false };
+      refs.autoRefresh.checked = false;
+    }
     clearAutoTimers();
     pausedRemainingMs = null;
     manualBusy = true;
@@ -950,6 +944,12 @@
     refs.refreshButton.textContent = "刷新中…";
     setError("");
     updateAutoProgress();
+    if (stoppedAutoForManual) {
+      diagnostics?.log("auto-refresh.stopped-for-manual", settings);
+      await chrome.storage.local
+        .set({ [SETTINGS_KEY]: settings })
+        .catch(() => undefined);
+    }
     let matchingRoomCount = 0;
     try {
       const current = await ensureRuntimeMode();
@@ -983,15 +983,15 @@
       manualBusy = false;
       refs.refreshButton.disabled = false;
       refs.refreshButton.textContent = "刷新并检测";
-      if (settings.autoRefreshEnabled) {
+      if (trigger === "auto" && settings.autoRefreshEnabled) {
         if (
-          shouldPauseAutoRefresh({
+          shouldDisableAutoRefreshAfterRefresh({
             trigger,
             autoRefreshEnabled: settings.autoRefreshEnabled,
             matchingRoomCount,
           })
         ) {
-          pauseAutoRefreshForMatch();
+          await disableAutoRefreshAfterMatch();
         } else {
           scheduleAutoRefresh(settings.refreshIntervalSeconds * 1000);
         }
@@ -1036,7 +1036,6 @@
   async function saveSettings() {
     const previousAutoRefreshEnabled = settings.autoRefreshEnabled;
     const previousRefreshIntervalSeconds = settings.refreshIntervalSeconds;
-    const wasPausedForMatch = autoRefreshPausedForMatch;
     settings = {
       targetMode: refs.targetMode.value || DEFAULT_SETTINGS.targetMode,
       thresholdSeconds: Math.min(
@@ -1062,7 +1061,6 @@
       renderRuntimeSnapshot(lastRuntimeSnapshot);
     }
     if (
-      wasPausedForMatch ||
       previousAutoRefreshEnabled !== settings.autoRefreshEnabled ||
       previousRefreshIntervalSeconds !== settings.refreshIntervalSeconds
     ) {
@@ -1184,8 +1182,7 @@
   document.addEventListener("visibilitychange", () => {
     if (
       !settings.autoRefreshEnabled ||
-      manualBusy ||
-      autoRefreshPausedForMatch
+      manualBusy
     ) {
       return;
     }
