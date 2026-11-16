@@ -282,13 +282,14 @@
     }
     .filter-row {
       display: grid;
-      grid-template-columns: 36px minmax(0, 1fr);
+      grid-template-columns: 52px minmax(0, 1fr);
       align-items: center;
       gap: 6px;
       min-width: 0;
       color: #9fa9a4;
       font-size: 11px;
     }
+    .filter-row .seconds-field input { height: 29px; }
     .range-filter {
       display: grid;
       grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto;
@@ -451,15 +452,22 @@
             <option value="身份标准">身份标准</option>
           </select>
         </label>
-        <label>
-          <span>高亮上限</span>
-          <span class="seconds-field">
-            <input data-threshold type="number" min="1" max="99" step="1" />
-            <span>秒</span>
-          </span>
-        </label>
       </div>
       <div class="filters-grid">
+        <div class="filter-row">
+          <span>出手时间</span>
+          <span class="seconds-field">
+            <input
+              data-threshold
+              type="number"
+              min="1"
+              max="99"
+              step="1"
+              aria-label="出手时间上限"
+            />
+            <span>秒</span>
+          </span>
+        </div>
         <div class="filter-row">
           <span>人数</span>
           <div class="range-filter" role="group" aria-label="当前人数筛选">
