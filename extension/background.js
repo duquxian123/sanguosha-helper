@@ -131,8 +131,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       sendResponse({ ok: false });
       return undefined;
     }
-    const count = Math.max(0, Number(message.count) || 0);
-    const badge = message.error ? "!" : count > 0 ? String(count) : "0";
+    const badge = message.error ? "!" : "";
     setBadge(tabId, badge, message.error ? "#8f554a" : "#4f866b").catch(
       () => undefined,
     );

@@ -13,17 +13,25 @@
   }
 
   const DEFAULT_FILTERS = Object.freeze({
-    full: "any",
+    playerMin: 1,
+    playerMax: 8,
     password: "any",
     chat: "any",
     items: "any",
   });
   const FILTER_VALUES = Object.freeze({
-    full: new Set(["any", "notFull", "full"]),
     password: new Set(["any", "none", "has"]),
     chat: new Set(["any", "allowed", "forbidden"]),
     items: new Set(["any", "allowed", "banned"]),
   });
+  const MIN_PLAYERS = 1;
+  const MAX_PLAYERS = 8;
+
+  function clampPlayerCount(value, fallback) {
+    const number = Number(value);
+    if (!Number.isFinite(number)) return fallback;
+    return Math.min(MAX_PLAYERS, Math.max(MIN_PLAYERS, Math.round(number)));
+  }
 
   function childNodes(node) {
     if (Array.isArray(node?._children)) return node._children;
@@ -103,17 +111,38 @@
   }
 
   function normalizeFilters(rawFilters = {}) {
-    return Object.fromEntries(
+    const filters = Object.fromEntries(
       Object.entries(DEFAULT_FILTERS).map(([key, fallback]) => {
         const value = rawFilters?.[key];
-        return [key, FILTER_VALUES[key].has(value) ? value : fallback];
+        if (FILTER_VALUES[key]) {
+          return [key, FILTER_VALUES[key].has(value) ? value : fallback];
+        }
+        return [key, value];
       }),
     );
+    filters.playerMin = clampPlayerCount(
+      rawFilters?.playerMin,
+      DEFAULT_FILTERS.playerMin,
+    );
+    filters.playerMax = clampPlayerCount(
+      rawFilters?.playerMax,
+      DEFAULT_FILTERS.playerMax,
+    );
+    if (filters.playerMin > filters.playerMax) {
+      filters.playerMin = filters.playerMax;
+    }
+    return filters;
   }
 
   function hasActiveExtraFilters(rawFilters = {}) {
     const filters = normalizeFilters(rawFilters);
-    return Object.values(filters).some((value) => value !== "any");
+    return (
+      filters.playerMin !== DEFAULT_FILTERS.playerMin ||
+      filters.playerMax !== DEFAULT_FILTERS.playerMax ||
+      filters.password !== "any" ||
+      filters.chat !== "any" ||
+      filters.items !== "any"
+    );
   }
 
   function matchesFilters(room, rawSettings = {}) {
@@ -132,10 +161,12 @@
     ) {
       return false;
     }
-    if (filters.full !== "any") {
-      if (room.full === null) return false;
-      if (filters.full === "notFull" && room.full) return false;
-      if (filters.full === "full" && !room.full) return false;
+    if (
+      !Number.isInteger(room.currentPlayers) ||
+      room.currentPlayers < filters.playerMin ||
+      room.currentPlayers > filters.playerMax
+    ) {
+      return false;
     }
     if (filters.password !== "any") {
       if (room.hasPassword === null) return false;
@@ -202,7 +233,9 @@
     findAdapter,
     hasActiveExtraFilters,
     isEligible,
+    MAX_PLAYERS,
     matchesFilters,
+    MIN_PLAYERS,
     normalizeFilters,
     roomFromTable,
   });

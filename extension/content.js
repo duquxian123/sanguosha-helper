@@ -10,25 +10,30 @@
   const DEFAULT_SETTINGS = Object.freeze({
     targetMode: "身份标准",
     thresholdSeconds: 15,
+    autoRefreshEnabled: true,
+    refreshIntervalSeconds: 5,
     filters: {
-      full: "any",
+      playerMin: 1,
+      playerMax: 8,
       password: "any",
       chat: "any",
       items: "any",
     },
   });
   const DEFAULT_FILTERS = Object.freeze({
-    full: "any",
+    playerMin: 1,
+    playerMax: 8,
     password: "any",
     chat: "any",
     items: "any",
   });
   const FILTER_VALUES = Object.freeze({
-    full: new Set(["any", "notFull", "full"]),
     password: new Set(["any", "none", "has"]),
     chat: new Set(["any", "allowed", "forbidden"]),
     items: new Set(["any", "allowed", "banned"]),
   });
+  const MIN_PLAYERS = 1;
+  const MAX_PLAYERS = 8;
   const diagnostics = globalThis.RoomsHelperDiagnostics;
   diagnostics?.log("content.dependencies", {
     panelState: Boolean(globalThis.SanGuoShaPanelState),
@@ -62,19 +67,38 @@
     return;
   }
 
-  const { clampPanelPosition, normalizePanelState } =
+  const {
+    clampPanelPosition,
+    normalizePanelState,
+    normalizeRefreshInterval,
+    shouldPauseAutoRefresh,
+  } =
     globalThis.SanGuoShaPanelState;
 
   function normalizeFilters(rawFilters = {}) {
     const normalized =
       globalThis.SanGuoShaLobbyData?.normalizeFilters?.(rawFilters);
     if (normalized) return normalized;
-    return Object.fromEntries(
+    const filters = Object.fromEntries(
       Object.entries(DEFAULT_FILTERS).map(([key, fallback]) => {
         const value = rawFilters?.[key];
-        return [key, FILTER_VALUES[key].has(value) ? value : fallback];
+        if (FILTER_VALUES[key]) {
+          return [key, FILTER_VALUES[key].has(value) ? value : fallback];
+        }
+        return [key, value];
       }),
     );
+    const clamp = (value, fallback) => {
+      const number = Number(value);
+      if (!Number.isFinite(number)) return fallback;
+      return Math.min(MAX_PLAYERS, Math.max(MIN_PLAYERS, Math.round(number)));
+    };
+    filters.playerMin = clamp(rawFilters?.playerMin, DEFAULT_FILTERS.playerMin);
+    filters.playerMax = clamp(rawFilters?.playerMax, DEFAULT_FILTERS.playerMax);
+    if (filters.playerMin > filters.playerMax) {
+      filters.playerMin = filters.playerMax;
+    }
+    return filters;
   }
 
   function matchesFilters(room, rawSettings = {}) {
@@ -89,10 +113,12 @@
     ) {
       return false;
     }
-    if (filters.full !== "any") {
-      if (room.full === null) return false;
-      if (filters.full === "notFull" && room.full) return false;
-      if (filters.full === "full" && !room.full) return false;
+    if (
+      !Number.isInteger(room.currentPlayers) ||
+      room.currentPlayers < filters.playerMin ||
+      room.currentPlayers > filters.playerMax
+    ) {
+      return false;
     }
     if (filters.password !== "any") {
       if (room.hasPassword === null) return false;
@@ -123,13 +149,16 @@
       inset: 0;
       z-index: 2147483646;
       pointer-events: none;
-      font: 12px/1.45 "Microsoft YaHei UI", "PingFang SC", sans-serif;
+      font: 13px/1.45 "Microsoft YaHei UI", "PingFang SC", sans-serif;
     }
     .panel {
       position: fixed;
-      right: 16px;
-      bottom: 18px;
-      width: 282px;
+      right: 10px;
+      bottom: 10px;
+      display: flex;
+      width: min(292px, calc(100vw - 16px));
+      max-height: calc(100vh - 20px);
+      flex-direction: column;
       overflow: hidden;
       border: 1px solid rgba(220, 184, 101, 0.56);
       border-radius: 4px;
@@ -138,14 +167,16 @@
       color: #ded5c3;
       pointer-events: auto;
       user-select: none;
+      transition: width 150ms ease;
     }
+    .panel.collapsed { width: min(170px, calc(100vw - 16px)); }
     .panel.dragging { box-shadow: 0 20px 58px rgba(0, 0, 0, 0.58); }
     .panel-head {
       display: flex;
       align-items: center;
       justify-content: space-between;
       gap: 8px;
-      min-height: 35px;
+      min-height: 37px;
       padding: 7px 8px 7px 10px;
       border-bottom: 1px solid rgba(220, 184, 101, 0.18);
       background: linear-gradient(120deg, rgba(220, 184, 101, 0.13), transparent);
@@ -155,6 +186,7 @@
     .panel.dragging .panel-head { cursor: grabbing; }
     .panel.collapsed .panel-head { border-bottom: 0; }
     .panel.collapsed .body { display: none; }
+    .panel.collapsed .panel-footer { display: none; }
     .panel-title,
     .panel-actions {
       display: flex;
@@ -166,32 +198,24 @@
     .title {
       overflow: hidden;
       color: #f0d49a;
-      font-size: 13px;
+      font-size: 14px;
       font-weight: 700;
       text-overflow: ellipsis;
       white-space: nowrap;
     }
-    .header-count {
-      display: inline-grid;
-      min-width: 18px;
-      height: 18px;
-      padding: 0 4px;
-      place-items: center;
-      border: 1px solid rgba(255, 210, 119, 0.38);
-      border-radius: 9px;
-      background: rgba(211, 168, 79, 0.13);
-      color: #ffd98e;
-      font: 10px/1 Georgia, serif;
+    .error-dot {
+      width: 7px;
+      height: 7px;
+      flex: 0 0 7px;
+      border-radius: 50%;
+      background: #d47768;
+      box-shadow: 0 0 0 3px rgba(212, 119, 104, 0.13);
     }
-    .version {
-      color: #7f918f;
-      font: 10px/1 Georgia, serif;
-      white-space: nowrap;
-    }
+    .error-dot[hidden] { display: none; }
     .collapse {
       display: grid;
-      width: 23px;
-      height: 23px;
+      width: 25px;
+      height: 25px;
       padding: 0;
       place-items: center;
       border: 1px solid rgba(255, 255, 255, 0.11);
@@ -209,28 +233,32 @@
       outline: 2px solid #e5c678;
       outline-offset: 1px;
     }
-    .body { padding: 9px 10px 10px; }
-    .controls {
+    .body {
+      min-height: 0;
+      overflow-y: auto;
+      padding: 10px 11px 9px;
+    }
+    .basic-grid {
       display: grid;
-      grid-template-columns: 1fr 88px;
-      gap: 8px;
+      grid-template-columns: 1fr;
+      gap: 9px;
     }
     label {
       display: grid;
       gap: 4px;
       color: #9fa9a4;
-      font-size: 10px;
+      font-size: 11px;
     }
     select,
     input {
       width: 100%;
-      height: 29px;
+      height: 31px;
       box-sizing: border-box;
       border: 1px solid rgba(220, 184, 101, 0.22);
       border-radius: 2px;
       background: rgba(4, 8, 8, 0.62);
       color: #e8dfcc;
-      font: 11px "Microsoft YaHei UI", sans-serif;
+      font: 12px "Microsoft YaHei UI", sans-serif;
       outline: none;
     }
     select { padding: 0 7px; }
@@ -241,36 +269,124 @@
       top: 50%;
       right: 7px;
       color: #74817e;
-      font-size: 10px;
+      font-size: 11px;
       transform: translateY(-50%);
       pointer-events: none;
     }
-    .filter-note {
-      margin-top: 7px;
-      color: #788986;
-      font-size: 9px;
-    }
-    .filter-title {
-      margin-top: 9px;
-      color: #8fa59a;
-      font-size: 9px;
-      letter-spacing: 0.08em;
-    }
-    .extra-filters {
+    .filters-grid {
       display: grid;
-      grid-template-columns: 1fr 1fr;
+      grid-template-columns: 1fr;
+      gap: 9px;
+      padding: 10px 0;
+      border-top: 1px solid rgba(220, 184, 101, 0.14);
+    }
+    .filter-row {
+      display: grid;
+      grid-template-columns: 36px minmax(0, 1fr);
+      align-items: center;
+      gap: 6px;
+      min-width: 0;
+      color: #9fa9a4;
+      font-size: 11px;
+    }
+    .range-filter {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 4px;
+      min-width: 0;
+    }
+    .range-filter input {
+      width: 100%;
+      height: 29px;
+      padding: 0 4px;
+      text-align: center;
+    }
+    .range-filter span {
+      color: #7f8b88;
+      font-size: 10px;
+      white-space: nowrap;
+    }
+    .segmented {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      overflow: hidden;
+      border: 1px solid rgba(220, 184, 101, 0.2);
+      border-radius: 3px;
+    }
+    .segmented button {
+      min-width: 0;
+      height: 29px;
+      padding: 0 2px;
+      border: 0;
+      border-right: 1px solid rgba(220, 184, 101, 0.14);
+      background: rgba(0, 0, 0, 0.22);
+      color: #87918d;
+      font: 11px "Microsoft YaHei UI", sans-serif;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .segmented button:last-child { border-right: 0; }
+    .segmented button[aria-pressed="true"] {
+      background: rgba(82, 201, 120, 0.2);
+      color: #bff1cc;
+      box-shadow: inset 0 -2px #52c978;
+    }
+    .auto-controls {
+      display: grid;
+      grid-template-columns: 1fr;
+      align-items: stretch;
+      gap: 8px;
+      margin-top: 9px;
+      padding-top: 8px;
+      border-top: 1px solid rgba(220, 184, 101, 0.12);
+    }
+    .auto-toggle {
+      display: flex;
+      align-items: center;
       gap: 7px;
-      margin-top: 5px;
+      min-height: 31px;
+      color: #c5d8cc;
+    }
+    .auto-toggle input {
+      width: 16px;
+      height: 16px;
+      padding: 0;
+      accent-color: #52c978;
+    }
+    .progress-area { margin-top: 7px; }
+    .progress-area[hidden] { display: none; }
+    .progress-head {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 4px;
+      color: #87a493;
+      font-size: 10px;
+    }
+    .progress-track {
+      height: 5px;
+      overflow: hidden;
+      border: 1px solid rgba(91, 220, 135, 0.18);
+      border-radius: 3px;
+      background: rgba(0, 0, 0, 0.34);
+    }
+    .progress-fill {
+      display: block;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(90deg, #3fa862, #74e19e);
+      transform-origin: left center;
+      transition: width 120ms linear;
     }
     .refresh {
       width: 100%;
-      min-height: 34px;
+      min-height: 36px;
       margin-top: 9px;
       border: 1px solid rgba(220, 184, 101, 0.52);
       border-radius: 2px;
       background: linear-gradient(135deg, #9b7437, #5d431d);
       color: #fff0c7;
-      font: 700 12px "Microsoft YaHei UI", sans-serif;
+      font: 700 13px "Microsoft YaHei UI", sans-serif;
       cursor: pointer;
     }
     .refresh:disabled {
@@ -278,40 +394,31 @@
       filter: grayscale(0.55);
       opacity: 0.65;
     }
-    .status-row {
-      display: flex;
-      align-items: center;
-      gap: 7px;
-      margin-top: 9px;
-      color: #9dafac;
-      font-size: 10px;
-    }
-    .dot {
-      width: 7px;
-      height: 7px;
-      flex: 0 0 7px;
-      border-radius: 50%;
-      background: #d8a747;
-      box-shadow: 0 0 0 3px rgba(216, 167, 71, 0.12);
-    }
-    .status-row.ok .dot { background: #65ae7f; box-shadow: 0 0 0 3px rgba(101, 174, 127, 0.13); }
-    .status-row.error .dot { background: #c86b58; box-shadow: 0 0 0 3px rgba(200, 107, 88, 0.14); }
-    .count {
-      margin-top: 7px;
+    .error-banner {
+      margin-top: 8px;
       padding: 6px 8px;
-      border-left: 2px solid #d3a84f;
-      background: rgba(211, 168, 79, 0.08);
-      color: #c8b98f;
-      font-size: 10px;
+      border-left: 2px solid #d47768;
+      background: rgba(120, 47, 38, 0.14);
+      color: #e3a398;
+      font-size: 11px;
+      line-height: 1.45;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
-    .count strong { color: #ffd78b; font-size: 16px; }
-    .meta {
+    .error-banner[hidden] { display: none; }
+    .panel-footer {
+      flex: 0 0 auto;
+      padding: 8px 12px 7px;
+      border-top: 1px solid rgba(220, 184, 101, 0.18);
+      background: rgba(8, 13, 14, 0.76);
+    }
+    .footer-meta {
       display: flex;
-      justify-content: space-between;
-      gap: 8px;
-      margin-top: 6px;
+      justify-content: flex-end;
+      margin-top: 4px;
       color: #70817f;
-      font-size: 9px;
+      font-size: 10px;
     }
   `;
 
@@ -323,10 +430,9 @@
     <div class="panel-head" data-drag-handle>
       <div class="panel-title">
         <span class="title">房间监控</span>
-        <span class="header-count" data-header-count>0</span>
+        <span class="error-dot" data-error-dot hidden title="出现错误"></span>
       </div>
       <div class="panel-actions">
-        <span class="version" data-version></span>
         <button
           class="collapse"
           type="button"
@@ -338,7 +444,7 @@
       </div>
     </div>
     <div class="body">
-      <div class="controls">
+      <div class="basic-grid">
         <label>
           <span>玩法</span>
           <select data-target-mode>
@@ -353,53 +459,77 @@
           </span>
         </label>
       </div>
-      <div class="filter-title">额外筛选</div>
-      <div class="extra-filters">
-        <label>
-          <span>满员</span>
-          <select data-filter-full>
-            <option value="any">不限</option>
-            <option value="notFull">仅未满</option>
-            <option value="full">仅已满</option>
-          </select>
-        </label>
-        <label>
+      <div class="filters-grid">
+        <div class="filter-row">
+          <span>人数</span>
+          <div class="range-filter" role="group" aria-label="当前人数筛选">
+            <input data-player-min type="number" min="1" max="8" step="1" aria-label="最少人数" />
+            <span>至</span>
+            <input data-player-max type="number" min="1" max="8" step="1" aria-label="最多人数" />
+            <span>人</span>
+          </div>
+        </div>
+        <div class="filter-row">
           <span>密码</span>
-          <select data-filter-password>
-            <option value="any">不限</option>
-            <option value="none">仅无密码</option>
-            <option value="has">仅有密码</option>
-          </select>
-        </label>
-        <label>
+          <div class="segmented" role="group" aria-label="密码筛选">
+            <button type="button" data-filter="password" data-value="any" aria-pressed="true">不限</button>
+            <button type="button" data-filter="password" data-value="none" aria-pressed="false">无</button>
+            <button type="button" data-filter="password" data-value="has" aria-pressed="false">有</button>
+          </div>
+        </div>
+        <div class="filter-row">
           <span>禁聊</span>
-          <select data-filter-chat>
-            <option value="any">不限</option>
-            <option value="allowed">仅允许聊天</option>
-            <option value="forbidden">仅禁止聊天</option>
-          </select>
+          <div class="segmented" role="group" aria-label="禁聊筛选">
+            <button type="button" data-filter="chat" data-value="any" aria-pressed="true">不限</button>
+            <button type="button" data-filter="chat" data-value="allowed" aria-pressed="false">允许</button>
+            <button type="button" data-filter="chat" data-value="forbidden" aria-pressed="false">禁止</button>
+          </div>
+        </div>
+        <div class="filter-row">
+          <span>道具</span>
+          <div class="segmented" role="group" aria-label="道具筛选">
+            <button type="button" data-filter="items" data-value="any" aria-pressed="true">不限</button>
+            <button type="button" data-filter="items" data-value="allowed" aria-pressed="false">允许</button>
+            <button type="button" data-filter="items" data-value="banned" aria-pressed="false">禁用</button>
+          </div>
+        </div>
+      </div>
+      <div class="auto-controls">
+        <label class="auto-toggle">
+          <input data-auto-refresh type="checkbox" />
+          <span>自动刷新</span>
         </label>
         <label>
-          <span>道具</span>
-          <select data-filter-items>
-            <option value="any">不限</option>
-            <option value="allowed">仅允许道具</option>
-            <option value="banned">仅禁用道具</option>
-          </select>
+          <span>间隔</span>
+          <span class="seconds-field">
+            <input data-refresh-interval type="number" min="5" max="15" step="1" />
+            <span>秒</span>
+          </span>
         </label>
       </div>
-      <div class="filter-note">多个条件同时启用时，需要全部满足</div>
+      <div class="error-banner" data-error role="status" aria-live="polite" hidden></div>
+    </div>
+    <div class="panel-footer">
+      <div class="progress-area" data-progress-area>
+        <div class="progress-head">
+          <span data-next-refresh>下次刷新 5 秒</span>
+          <span data-progress-state>自动</span>
+        </div>
+        <div
+          class="progress-track"
+          data-progress
+          role="progressbar"
+          aria-label="自动刷新倒计时"
+          aria-valuemin="0"
+          aria-valuemax="5"
+          aria-valuenow="5"
+        >
+          <span class="progress-fill" data-progress-fill></span>
+        </div>
+      </div>
       <button class="refresh" type="button" data-refresh>刷新并检测</button>
-      <div class="status-row" data-status-row>
-        <span class="dot"></span>
-        <span data-status>等待手动刷新</span>
-      </div>
-      <div class="count">
-        <span data-threshold-label>15 秒内</span>符合条件：<strong data-count>0</strong> 个
-      </div>
-      <div class="meta">
-        <span data-refresh-time>尚未刷新</span>
-        <span data-source>等待读取</span>
+      <div class="footer-meta">
+        <span data-version></span>
       </div>
     </div>
   `;
@@ -410,22 +540,23 @@
   });
 
   const refs = {
+    autoRefresh: shadow.querySelector("[data-auto-refresh]"),
     collapse: shadow.querySelector("[data-collapse]"),
-    count: shadow.querySelector("[data-count]"),
     dragHandle: shadow.querySelector("[data-drag-handle]"),
-    filterChat: shadow.querySelector("[data-filter-chat]"),
-    filterFull: shadow.querySelector("[data-filter-full]"),
-    filterItems: shadow.querySelector("[data-filter-items]"),
-    filterPassword: shadow.querySelector("[data-filter-password]"),
-    headerCount: shadow.querySelector("[data-header-count]"),
+    errorBanner: shadow.querySelector("[data-error]"),
+    errorDot: shadow.querySelector("[data-error-dot]"),
+    filterButtons: [...shadow.querySelectorAll("[data-filter]")],
+    nextRefresh: shadow.querySelector("[data-next-refresh]"),
+    playerMax: shadow.querySelector("[data-player-max]"),
+    playerMin: shadow.querySelector("[data-player-min]"),
+    progress: shadow.querySelector("[data-progress]"),
+    progressArea: shadow.querySelector("[data-progress-area]"),
+    progressFill: shadow.querySelector("[data-progress-fill]"),
+    progressState: shadow.querySelector("[data-progress-state]"),
     refreshButton: shadow.querySelector("[data-refresh]"),
-    refreshTime: shadow.querySelector("[data-refresh-time]"),
-    source: shadow.querySelector("[data-source]"),
-    status: shadow.querySelector("[data-status]"),
-    statusRow: shadow.querySelector("[data-status-row]"),
+    refreshInterval: shadow.querySelector("[data-refresh-interval]"),
     targetMode: shadow.querySelector("[data-target-mode]"),
     threshold: shadow.querySelector("[data-threshold]"),
-    thresholdLabel: shadow.querySelector("[data-threshold-label]"),
     version: shadow.querySelector("[data-version]"),
   };
   refs.version.textContent = `v${chrome.runtime.getManifest().version}`;
@@ -438,12 +569,18 @@
   let lastRuntimeSnapshot = null;
   let pendingRuntimeRefresh = null;
   let runtimeCommandSequence = 0;
+  let autoRefreshTimer = null;
+  let progressTimer = null;
+  let nextRefreshAt = 0;
+  let pausedRemainingMs = null;
+  let autoRefreshPausedForMatch = false;
   const runtimeCommands = new Map();
 
-  function setStatus(message, kind = "") {
-    refs.status.textContent = message;
-    refs.statusRow.classList.toggle("ok", kind === "ok");
-    refs.statusRow.classList.toggle("error", kind === "error");
+  function setError(message = "") {
+    const hasError = Boolean(message);
+    refs.errorDot.hidden = !hasError;
+    refs.errorBanner.hidden = !hasError;
+    refs.errorBanner.textContent = hasError ? String(message) : "";
   }
 
   function sendMessage(message) {
@@ -530,6 +667,7 @@
 
   function applyPanelStyles(nextState) {
     panelState = normalizePanelState(nextState);
+    panel.classList.toggle("collapsed", panelState.collapsed);
     if (
       Number.isFinite(panelState.left) &&
       Number.isFinite(panelState.top)
@@ -554,7 +692,6 @@
       panel.style.removeProperty("right");
       panel.style.removeProperty("bottom");
     }
-    panel.classList.toggle("collapsed", panelState.collapsed);
     refs.collapse.textContent = panelState.collapsed ? "+" : "−";
     refs.collapse.setAttribute("aria-expanded", String(!panelState.collapsed));
     refs.collapse.setAttribute(
@@ -615,13 +752,115 @@
     savePanelState().catch(() => undefined);
   }
 
-  function updateCount(count) {
-    refs.count.textContent = String(count);
-    refs.headerCount.textContent = String(count);
+  function clearAutoTimers() {
+    if (autoRefreshTimer) clearTimeout(autoRefreshTimer);
+    if (progressTimer) clearInterval(progressTimer);
+    autoRefreshTimer = null;
+    progressTimer = null;
+    nextRefreshAt = 0;
   }
 
-  function setSource(label) {
-    refs.source.textContent = label;
+  function updateAutoProgress() {
+    const enabled = Boolean(settings.autoRefreshEnabled);
+    refs.autoRefresh.checked = enabled;
+    refs.progressArea.hidden = !enabled;
+    if (!enabled) return;
+
+    const intervalMs = settings.refreshIntervalSeconds * 1000;
+    refs.progress.setAttribute("aria-valuemax", String(settings.refreshIntervalSeconds));
+    if (manualBusy) {
+      refs.progressFill.style.width = "0%";
+      refs.nextRefresh.textContent = "正在刷新";
+      refs.progressState.textContent = "自动";
+      refs.progress.setAttribute("aria-valuenow", "0");
+      refs.progress.setAttribute("aria-valuetext", "正在刷新");
+      return;
+    }
+    if (autoRefreshPausedForMatch) {
+      refs.progressFill.style.width = "100%";
+      refs.nextRefresh.textContent = "已找到房源 · 自动刷新暂停";
+      refs.progressState.textContent = "手动继续";
+      refs.progress.setAttribute(
+        "aria-valuenow",
+        String(settings.refreshIntervalSeconds),
+      );
+      refs.progress.setAttribute(
+        "aria-valuetext",
+        "已找到符合条件的房源，自动刷新已暂停",
+      );
+      return;
+    }
+
+    let remainingMs;
+    if (document.visibilityState !== "visible") {
+      remainingMs =
+        pausedRemainingMs ??
+        (nextRefreshAt > 0 ? Math.max(0, nextRefreshAt - Date.now()) : intervalMs);
+      refs.nextRefresh.textContent = `已暂停 · 剩余 ${Math.max(
+        0,
+        Math.ceil(remainingMs / 1000),
+      )} 秒`;
+    } else if (nextRefreshAt > 0) {
+      remainingMs = Math.max(0, nextRefreshAt - Date.now());
+      refs.nextRefresh.textContent = `下次刷新 ${Math.max(
+        0,
+        Math.ceil(remainingMs / 1000),
+      )} 秒`;
+    } else {
+      remainingMs = intervalMs;
+      refs.nextRefresh.textContent = "准备自动刷新";
+    }
+    const ratio = Math.max(0, Math.min(1, remainingMs / intervalMs));
+    refs.progressFill.style.width = `${ratio * 100}%`;
+    refs.progressState.textContent = "自动";
+    refs.progress.setAttribute(
+      "aria-valuenow",
+      String(Math.max(0, Math.ceil(remainingMs / 1000))),
+    );
+    refs.progress.setAttribute(
+      "aria-valuetext",
+      refs.nextRefresh.textContent,
+    );
+  }
+
+  function scheduleAutoRefresh(delayMs = settings.refreshIntervalSeconds * 1000) {
+    autoRefreshPausedForMatch = false;
+    clearAutoTimers();
+    pausedRemainingMs = null;
+    if (!settings.autoRefreshEnabled) {
+      updateAutoProgress();
+      return;
+    }
+    if (document.visibilityState !== "visible") {
+      pausedRemainingMs = Math.max(0, delayMs);
+      updateAutoProgress();
+      return;
+    }
+    nextRefreshAt = Date.now() + delayMs;
+    updateAutoProgress();
+    progressTimer = setInterval(updateAutoProgress, 100);
+    autoRefreshTimer = setTimeout(() => {
+      clearAutoTimers();
+      manualRefresh({ trigger: "auto" }).catch(() => undefined);
+    }, delayMs);
+  }
+
+  function pauseAutoRefreshForMatch() {
+    clearAutoTimers();
+    pausedRemainingMs = null;
+    autoRefreshPausedForMatch = true;
+    updateAutoProgress();
+  }
+
+  function restartAutoRefresh() {
+    autoRefreshPausedForMatch = false;
+    clearAutoTimers();
+    pausedRemainingMs = null;
+    if (!settings.autoRefreshEnabled) {
+      updateAutoProgress();
+      return;
+    }
+    scheduleAutoRefresh(settings.refreshIntervalSeconds * 1000);
   }
 
   function filteredRuntimeSnapshot(snapshot) {
@@ -633,18 +872,11 @@
   function renderRuntimeSnapshot(snapshot) {
     const filtered = filteredRuntimeSnapshot(snapshot);
     lastRuntimeSnapshot = filtered;
-    updateCount(filtered.highlights.length);
-    setSource("实时读取");
-    setStatus(
-      filtered.highlights.length
-        ? "实时数据已更新"
-        : "实时读取中，当前没有符合条件的房间",
-      "ok",
-    );
+    setError("");
     sendMessage({
       type: "ROOMS_HELPER_STATUS",
-      count: filtered.highlights.length,
     });
+    return filtered;
   }
 
   function runtimeCommand(command, extra = {}) {
@@ -707,14 +939,18 @@
     return snapshot;
   }
 
-  async function manualRefresh() {
+  async function manualRefresh({ trigger = "manual" } = {}) {
     if (manualBusy) return;
+    autoRefreshPausedForMatch = false;
+    clearAutoTimers();
+    pausedRemainingMs = null;
     manualBusy = true;
-    diagnostics?.log("manual-refresh.start", settings);
+    diagnostics?.log(`${trigger}-refresh.start`, settings);
     refs.refreshButton.disabled = true;
     refs.refreshButton.textContent = "刷新中…";
-    setSource("正在连接实时数据");
-    setStatus("正在刷新房间并检测…");
+    setError("");
+    updateAutoProgress();
+    let matchingRoomCount = 0;
     try {
       const current = await ensureRuntimeMode();
       if (!current?.available) throw new Error("游戏运行态暂不可用");
@@ -725,66 +961,98 @@
       if (!snapshot?.available) {
         throw new Error("刷新后没有获得大厅运行态");
       }
-      renderRuntimeSnapshot(snapshot);
-      refs.refreshTime.textContent = `刷新 ${formatTime()}`;
-      diagnostics?.log("manual-refresh.runtime-complete", {
+      const filtered = renderRuntimeSnapshot(snapshot);
+      matchingRoomCount = filtered.highlights.length;
+      diagnostics?.log(`${trigger}-refresh.runtime-complete`, {
         rooms: snapshot.rooms.length,
         highlights: snapshot.highlights.length,
       });
     } catch (runtimeError) {
       pendingRuntimeRefresh = null;
-      diagnostics?.log("manual-refresh.runtime-error", runtimeError);
-      updateCount(0);
+      diagnostics?.log(`${trigger}-refresh.runtime-error`, runtimeError);
       lastRuntimeSnapshot = null;
       runtimeCommand("stopRender").catch(() => undefined);
-      setSource("刷新失败");
-      setStatus(
+      setError(
         `${runtimeError?.message || "实时读取失败"}，请点击扩展图标复制 Log`,
-        "error",
       );
       await sendMessage({
         type: "ROOMS_HELPER_STATUS",
-        count: 0,
         error: "刷新失败",
       });
     } finally {
       manualBusy = false;
       refs.refreshButton.disabled = false;
       refs.refreshButton.textContent = "刷新并检测";
+      if (settings.autoRefreshEnabled) {
+        if (
+          shouldPauseAutoRefresh({
+            trigger,
+            autoRefreshEnabled: settings.autoRefreshEnabled,
+            matchingRoomCount,
+          })
+        ) {
+          pauseAutoRefreshForMatch();
+        } else {
+          scheduleAutoRefresh(settings.refreshIntervalSeconds * 1000);
+        }
+      } else {
+        updateAutoProgress();
+      }
     }
   }
 
-  function formatTime() {
-    return new Intl.DateTimeFormat("zh-CN", {
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-      hour12: false,
-    }).format(new Date());
+  function setFilterValue(key, value) {
+    for (const button of refs.filterButtons) {
+      if (button.dataset.filter !== key) continue;
+      button.setAttribute(
+        "aria-pressed",
+        String(button.dataset.value === value),
+      );
+    }
+  }
+
+  function filterValue(key) {
+    return (
+      refs.filterButtons.find(
+        (button) =>
+          button.dataset.filter === key &&
+          button.getAttribute("aria-pressed") === "true",
+      )?.dataset.value || "any"
+    );
   }
 
   function renderSettings() {
     refs.targetMode.value = settings.targetMode;
     refs.threshold.value = String(settings.thresholdSeconds);
-    refs.thresholdLabel.textContent = `${settings.thresholdSeconds} 秒内`;
-    refs.filterFull.value = settings.filters.full;
-    refs.filterPassword.value = settings.filters.password;
-    refs.filterChat.value = settings.filters.chat;
-    refs.filterItems.value = settings.filters.items;
+    refs.autoRefresh.checked = settings.autoRefreshEnabled;
+    refs.refreshInterval.value = String(settings.refreshIntervalSeconds);
+    refs.playerMin.value = String(settings.filters.playerMin);
+    refs.playerMax.value = String(settings.filters.playerMax);
+    setFilterValue("password", settings.filters.password);
+    setFilterValue("chat", settings.filters.chat);
+    setFilterValue("items", settings.filters.items);
   }
 
   async function saveSettings() {
+    const previousAutoRefreshEnabled = settings.autoRefreshEnabled;
+    const previousRefreshIntervalSeconds = settings.refreshIntervalSeconds;
+    const wasPausedForMatch = autoRefreshPausedForMatch;
     settings = {
       targetMode: refs.targetMode.value || DEFAULT_SETTINGS.targetMode,
       thresholdSeconds: Math.min(
         99,
         Math.max(1, Number(refs.threshold.value) || 15),
       ),
+      autoRefreshEnabled: refs.autoRefresh.checked,
+      refreshIntervalSeconds: normalizeRefreshInterval(
+        refs.refreshInterval.value,
+      ),
       filters: normalizeFilters({
-        full: refs.filterFull.value,
-        password: refs.filterPassword.value,
-        chat: refs.filterChat.value,
-        items: refs.filterItems.value,
+        playerMin: refs.playerMin.value,
+        playerMax: refs.playerMax.value,
+        password: filterValue("password"),
+        chat: filterValue("chat"),
+        items: filterValue("items"),
       }),
     };
     diagnostics?.log("settings.changed", settings);
@@ -792,6 +1060,15 @@
     await chrome.storage.local.set({ [SETTINGS_KEY]: settings });
     if (lastRuntimeSnapshot) {
       renderRuntimeSnapshot(lastRuntimeSnapshot);
+    }
+    if (
+      wasPausedForMatch ||
+      previousAutoRefreshEnabled !== settings.autoRefreshEnabled ||
+      previousRefreshIntervalSeconds !== settings.refreshIntervalSeconds
+    ) {
+      restartAutoRefresh();
+    } else {
+      updateAutoProgress();
     }
     await runtimeCommand("setSettings").catch(() => undefined);
   }
@@ -802,6 +1079,10 @@
     settings.thresholdSeconds = Math.min(
       99,
       Math.max(1, Number(settings.thresholdSeconds) || 15),
+    );
+    settings.autoRefreshEnabled = settings.autoRefreshEnabled !== false;
+    settings.refreshIntervalSeconds = normalizeRefreshInterval(
+      settings.refreshIntervalSeconds,
     );
     settings.filters = normalizeFilters(settings.filters);
     renderSettings();
@@ -822,13 +1103,21 @@
   refs.threshold.addEventListener("change", () => {
     saveSettings().catch(() => undefined);
   });
-  for (const filter of [
-    refs.filterFull,
-    refs.filterPassword,
-    refs.filterChat,
-    refs.filterItems,
-  ]) {
-    filter.addEventListener("change", () => {
+  refs.autoRefresh.addEventListener("change", () => {
+    saveSettings().catch(() => undefined);
+  });
+  refs.refreshInterval.addEventListener("change", () => {
+    saveSettings().catch(() => undefined);
+  });
+  refs.playerMin.addEventListener("change", () => {
+    saveSettings().catch(() => undefined);
+  });
+  refs.playerMax.addEventListener("change", () => {
+    saveSettings().catch(() => undefined);
+  });
+  for (const button of refs.filterButtons) {
+    button.addEventListener("click", () => {
+      setFilterValue(button.dataset.filter, button.dataset.value);
       saveSettings().catch(() => undefined);
     });
   }
@@ -892,6 +1181,28 @@
     );
   });
 
+  document.addEventListener("visibilitychange", () => {
+    if (
+      !settings.autoRefreshEnabled ||
+      manualBusy ||
+      autoRefreshPausedForMatch
+    ) {
+      return;
+    }
+    if (document.visibilityState !== "visible") {
+      pausedRemainingMs =
+        nextRefreshAt > 0
+          ? Math.max(0, nextRefreshAt - Date.now())
+          : settings.refreshIntervalSeconds * 1000;
+      clearAutoTimers();
+      updateAutoProgress();
+      return;
+    }
+    scheduleAutoRefresh(
+      pausedRemainingMs ?? settings.refreshIntervalSeconds * 1000,
+    );
+  });
+
   window.addEventListener(RUNTIME_RESPONSE_EVENT, (event) => {
     const detail = event.detail;
     const pending = runtimeCommands.get(detail?.id);
@@ -925,11 +1236,11 @@
     }
     if (lastRuntimeSnapshot || snapshot.source === "runtime") {
       renderRuntimeSnapshot(snapshot);
-      refs.refreshTime.textContent = `更新 ${formatTime()}`;
     }
   });
 
   (async () => {
     await Promise.all([loadSettings(), loadPanelState()]);
-  })().catch((error) => setStatus(error?.message || "初始化失败", "error"));
+    restartAutoRefresh();
+  })().catch((error) => setError(error?.message || "初始化失败"));
 })();

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "三国杀房间监控助手",
-  "version": "0.12.0",
+  "version": "0.14.2",
   "description": "实时筛选三国杀大厅房间，并以绿色高亮符合条件的等待房间。",
   "minimum_chrome_version": "116",
   "permissions": ["activeTab", "debugger", "storage"],

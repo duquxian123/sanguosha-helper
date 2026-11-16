@@ -17,6 +17,8 @@
   let fallbackTimer = null;
   let localPollTimer = null;
   let eventPublishQueued = false;
+  let holdPublishUntil = 0;
+  let holdPublishTimer = null;
   const listenerContext = {};
 
   function dispatch(type, detail) {
@@ -133,6 +135,20 @@
       clearTimeout(fallbackTimer);
       fallbackTimer = null;
     }
+    const holdMs = holdPublishUntil - Date.now();
+    if (holdMs > 0) {
+      if (!holdPublishTimer) {
+        holdPublishTimer = setTimeout(() => {
+          holdPublishTimer = null;
+          if (fallbackTimer) {
+            clearTimeout(fallbackTimer);
+            fallbackTimer = null;
+          }
+          publish();
+        }, holdMs);
+      }
+      return;
+    }
     if (eventPublishQueued) return;
     eventPublishQueued = true;
     queueMicrotask(() => {
@@ -161,7 +177,7 @@
     return next;
   }
 
-  function ensureWaitingFilter() {
+  async function ensureWaitingFilter() {
     const windowObject = adapter.windowObject;
     const manager = adapter.manager;
     const modeId =
@@ -179,15 +195,27 @@
         windowObject.onChangeHandler();
         return;
       }
+      manager.EnterPageReq?.(modeId, groupId);
+      return;
     }
-    manager.EnterPageReq?.(modeId, groupId);
+    if (typeof windowObject.onChangeHandler !== "function") {
+      manager.EnterPageReq?.(modeId, groupId);
+      return;
+    }
+
+    holdPublishUntil = Date.now() + 750;
+    checkbox.selected = false;
+    windowObject.onChangeHandler();
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    checkbox.selected = true;
+    windowObject.onChangeHandler();
   }
 
   function response(id, payload) {
     dispatch(RESPONSE_EVENT, { id, ...payload });
   }
 
-  function handleCommand(event) {
+  async function handleCommand(event) {
     const detail = event?.detail;
     if (!detail || typeof detail.id !== "string") return;
     const type = detail.command;
@@ -201,7 +229,12 @@
           return;
         }
         renderEnabled = true;
-        ensureWaitingFilter();
+        if (holdPublishTimer) {
+          clearTimeout(holdPublishTimer);
+          holdPublishTimer = null;
+        }
+        holdPublishUntil = 0;
+        await ensureWaitingFilter();
         const snapshot = data.buildSnapshot(adapter, {
           thresholdSeconds,
           filters: filterSettings,
@@ -245,13 +278,24 @@
     }
   }
 
-  window.addEventListener(COMMAND_EVENT, handleCommand);
+  window.addEventListener(COMMAND_EVENT, (event) => {
+    handleCommand(event).catch((error) => {
+      response(event?.detail?.id, {
+        ok: false,
+        error: error?.message || "大厅命令执行失败",
+      });
+    });
+  });
   window.addEventListener("pagehide", () => {
     renderEnabled = false;
     stopLocalPolling();
     if (fallbackTimer) {
       clearTimeout(fallbackTimer);
       fallbackTimer = null;
+    }
+    if (holdPublishTimer) {
+      clearTimeout(holdPublishTimer);
+      holdPublishTimer = null;
     }
     clearHighlights();
     unsubscribe();

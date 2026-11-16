@@ -8,6 +8,7 @@ const {
   findAdapter,
   hasActiveExtraFilters,
   matchesFilters,
+  normalizeFilters,
   roomFromTable,
 } = globalThis.SanGuoShaLobbyData;
 
@@ -121,7 +122,7 @@ test("builds real-time eligibility from room fields", () => {
   );
 });
 
-test("combines full, password, chat and item filters with AND logic", () => {
+test("combines player range, password, chat and item filters with AND logic", () => {
   const room = {
     tableId: "9001",
     name: "身份标准",
@@ -137,7 +138,8 @@ test("combines full, password, chat and item filters with AND logic", () => {
   const settings = {
     thresholdSeconds: 15,
     filters: {
-      full: "notFull",
+      playerMin: 4,
+      playerMax: 8,
       password: "none",
       chat: "allowed",
       items: "allowed",
@@ -162,12 +164,12 @@ test("combines full, password, chat and item filters with AND logic", () => {
   );
 });
 
-test("does not match an enabled filter when its room field is unknown", () => {
+test("does not match a room when the current player count is unknown", () => {
   const room = {
     tableId: "9002",
     name: "身份标准",
     seconds: 10,
-    currentPlayers: 3,
+    currentPlayers: null,
     maxPlayers: 8,
     status: "等待中",
     full: false,
@@ -179,13 +181,19 @@ test("does not match an enabled filter when its room field is unknown", () => {
   assert.equal(
     matchesFilters(room, {
       thresholdSeconds: 15,
-      filters: { password: "none", chat: "any", items: "any", full: "any" },
+      filters: {
+        playerMin: 1,
+        playerMax: 8,
+        password: "none",
+        chat: "any",
+        items: "any",
+      },
     }),
     false,
   );
 });
 
-test("supports positive and negative directions for every extra filter", () => {
+test("supports inclusive custom player ranges and positive filter directions", () => {
   const base = {
     tableId: "9100",
     name: "身份标准",
@@ -202,7 +210,8 @@ test("supports positive and negative directions for every extra filter", () => {
     matchesFilters(base, {
       thresholdSeconds: 15,
       filters: {
-        full: "any",
+        playerMin: 1,
+        playerMax: 8,
         password: "any",
         chat: "any",
         items: "any",
@@ -210,12 +219,76 @@ test("supports positive and negative directions for every extra filter", () => {
       },
     });
 
-  assert.equal(filter({ full: "notFull" }), true);
-  assert.equal(filter({ full: "full" }), false);
+  assert.equal(filter({ playerMin: 3, playerMax: 7 }), true);
+  assert.equal(filter({ playerMin: 4, playerMax: 8 }), false);
+  assert.equal(filter({ playerMin: 4, playerMax: 6 }), false);
   assert.equal(filter({ password: "none" }), true);
   assert.equal(filter({ password: "has" }), false);
   assert.equal(filter({ chat: "allowed" }), true);
   assert.equal(filter({ chat: "forbidden" }), false);
   assert.equal(filter({ items: "allowed" }), true);
   assert.equal(filter({ items: "banned" }), false);
+
+  const matchesRange = (currentPlayers) =>
+    matchesFilters(
+      { ...base, currentPlayers },
+      {
+        thresholdSeconds: 15,
+        filters: {
+          playerMin: 4,
+          playerMax: 7,
+          password: "any",
+          chat: "any",
+          items: "any",
+        },
+      },
+    );
+  assert.equal(matchesRange(3), false);
+  assert.equal(matchesRange(4), true);
+  assert.equal(matchesRange(7), true);
+  assert.equal(matchesRange(8), false);
+});
+
+test("normalizes player range boundaries and reversed ranges", () => {
+  assert.deepEqual(normalizeFilters({}), {
+    playerMin: 1,
+    playerMax: 8,
+    password: "any",
+    chat: "any",
+    items: "any",
+  });
+  assert.deepEqual(normalizeFilters({ playerMin: -3, playerMax: 20 }), {
+    playerMin: 1,
+    playerMax: 8,
+    password: "any",
+    chat: "any",
+    items: "any",
+  });
+  assert.equal(
+    normalizeFilters({ playerMin: 7, playerMax: 4 }).playerMin,
+    4,
+  );
+  assert.equal(
+    normalizeFilters({ playerMin: 7, playerMax: 4 }).playerMax,
+    4,
+  );
+
+  const room = {
+    tableId: "9200",
+    seconds: 10,
+    maxPlayers: 8,
+    status: "等待中",
+    hasPassword: false,
+    forbidChat: false,
+    banItem: false,
+  };
+  const matchesDefaultRange = (currentPlayers) =>
+    matchesFilters(
+      { ...room, currentPlayers },
+      { thresholdSeconds: 15, filters: normalizeFilters({}) },
+    );
+  assert.equal(matchesDefaultRange(1), true);
+  assert.equal(matchesDefaultRange(8), true);
+  assert.equal(matchesDefaultRange(0), false);
+  assert.equal(matchesDefaultRange(9), false);
 });

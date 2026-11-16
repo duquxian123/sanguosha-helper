@@ -10,9 +10,10 @@ const runtimeSource = readFileSync(
   "utf8",
 );
 
-function createHarness() {
+function createHarness({ waitingSelected = false } = {}) {
   const listeners = new Map();
   const responses = [];
+  const filterSelections = [];
   let tableListHandler = null;
   let enterPageRequests = 0;
   class CustomEvent {
@@ -88,10 +89,11 @@ function createHarness() {
   const roomWindow = {
     roomUIS: rows,
     hallManager: manager,
-    isWaitCheckBox: { selected: false },
+    isWaitCheckBox: { selected: waitingSelected },
     modeId: 31,
     groupId: 1,
     onChangeHandler() {
+      filterSelections.push(this.isWaitCheckBox.selected);
       manager.EnterPageReq();
     },
   };
@@ -128,6 +130,7 @@ function createHarness() {
     context,
     manager,
     responses,
+    filterSelections,
     roomWindow,
     rows,
     emitTableList() {
@@ -139,7 +142,13 @@ function createHarness() {
   };
 }
 
-test("manual refresh enables waiting filter and renders runtime highlights", () => {
+async function flushAsync() {
+  for (let index = 0; index < 5; index += 1) {
+    await Promise.resolve();
+  }
+}
+
+test("manual refresh enables waiting filter and renders runtime highlights", async () => {
   const harness = createHarness();
   harness.context.dispatchEvent(
     new harness.context.CustomEvent("__san_guo_sha_lobby_command_v1__", {
@@ -150,6 +159,7 @@ test("manual refresh enables waiting filter and renders runtime highlights", () 
       },
     }),
   );
+  await flushAsync();
 
   assert.equal(harness.roomWindow.isWaitCheckBox.selected, true);
   assert.equal(harness.enterPageRequests(), 1);
@@ -160,6 +170,25 @@ test("manual refresh enables waiting filter and renders runtime highlights", () 
     "rgba(82,221,128,0.95)",
   );
   assert.equal(harness.rows[1].__sanGuoShaRoomsHighlight, undefined);
+});
+
+test("checked waiting filter is cancelled and checked again before refresh", async () => {
+  const harness = createHarness({ waitingSelected: true });
+  harness.context.dispatchEvent(
+    new harness.context.CustomEvent("__san_guo_sha_lobby_command_v1__", {
+      detail: {
+        id: "refresh-checked",
+        command: "refresh",
+        settings: { thresholdSeconds: 15 },
+      },
+    }),
+  );
+  await flushAsync();
+
+  assert.deepEqual(harness.filterSelections, [false, true]);
+  assert.equal(harness.roomWindow.isWaitCheckBox.selected, true);
+  assert.equal(harness.enterPageRequests(), 2);
+  assert.equal(harness.responses[0].ok, true);
 });
 
 test("room-list events update highlights without another refresh request", async () => {
@@ -173,6 +202,7 @@ test("room-list events update highlights without another refresh request", async
       },
     }),
   );
+  await flushAsync();
   const requestsAfterRefresh = harness.enterPageRequests();
 
   harness.manager.tableList[0].TableGameTimer = 20;

@@ -3,7 +3,12 @@ import test from "node:test";
 
 await import("../extension/panel-state.js");
 
-const { clampPanelPosition, normalizePanelState } = globalThis.SanGuoShaPanelState;
+const {
+  clampPanelPosition,
+  normalizePanelState,
+  normalizeRefreshInterval,
+  shouldPauseAutoRefresh,
+} = globalThis.SanGuoShaPanelState;
 
 test("normalizes saved panel state without trusting malformed values", () => {
   assert.deepEqual(normalizePanelState(null), {
@@ -45,4 +50,54 @@ test("clamps panel coordinates to the visible viewport", () => {
   });
 
   assert.deepEqual(clamped, { left: 500, top: 480 });
+});
+
+test("limits automatic refresh interval to five through fifteen seconds", () => {
+  assert.equal(normalizeRefreshInterval(undefined), 5);
+  assert.equal(normalizeRefreshInterval(1), 5);
+  assert.equal(normalizeRefreshInterval(5), 5);
+  assert.equal(normalizeRefreshInterval(11.6), 12);
+  assert.equal(normalizeRefreshInterval(20), 15);
+});
+
+test("pauses automatic refresh only after an automatic run finds rooms", () => {
+  assert.equal(
+    shouldPauseAutoRefresh({
+      trigger: "auto",
+      autoRefreshEnabled: true,
+      matchingRoomCount: 1,
+    }),
+    true,
+  );
+  assert.equal(
+    shouldPauseAutoRefresh({
+      trigger: "auto",
+      autoRefreshEnabled: true,
+      matchingRoomCount: 0,
+    }),
+    false,
+  );
+  assert.equal(
+    shouldPauseAutoRefresh({
+      trigger: "auto",
+      autoRefreshEnabled: true,
+    }),
+    false,
+  );
+  assert.equal(
+    shouldPauseAutoRefresh({
+      trigger: "manual",
+      autoRefreshEnabled: true,
+      matchingRoomCount: 2,
+    }),
+    false,
+  );
+  assert.equal(
+    shouldPauseAutoRefresh({
+      trigger: "auto",
+      autoRefreshEnabled: false,
+      matchingRoomCount: 1,
+    }),
+    false,
+  );
 });

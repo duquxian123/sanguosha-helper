@@ -2,6 +2,9 @@
   "use strict";
 
   const MIN_VISIBLE_PX = 8;
+  const DEFAULT_REFRESH_INTERVAL_SECONDS = 5;
+  const MIN_REFRESH_INTERVAL_SECONDS = 5;
+  const MAX_REFRESH_INTERVAL_SECONDS = 15;
 
   function finiteOrNull(value) {
     const number = Number(value);
@@ -45,9 +48,37 @@
     };
   }
 
+  function normalizeRefreshInterval(value) {
+    const number = Number(value);
+    if (!Number.isFinite(number)) return DEFAULT_REFRESH_INTERVAL_SECONDS;
+    return Math.min(
+      MAX_REFRESH_INTERVAL_SECONDS,
+      Math.max(MIN_REFRESH_INTERVAL_SECONDS, Math.round(number)),
+    );
+  }
+
+  function shouldPauseAutoRefresh({
+    trigger,
+    autoRefreshEnabled,
+    matchingRoomCount,
+  } = {}) {
+    const count = Number(matchingRoomCount);
+    return (
+      trigger === "auto" &&
+      Boolean(autoRefreshEnabled) &&
+      Number.isFinite(count) &&
+      count > 0
+    );
+  }
+
   global.SanGuoShaPanelState = Object.freeze({
+    DEFAULT_REFRESH_INTERVAL_SECONDS,
+    MAX_REFRESH_INTERVAL_SECONDS,
+    MIN_REFRESH_INTERVAL_SECONDS,
     MIN_VISIBLE_PX,
     clampPanelPosition,
+    normalizeRefreshInterval,
     normalizePanelState,
+    shouldPauseAutoRefresh,
   });
 })(globalThis);
