@@ -184,7 +184,11 @@
       touch-action: none;
     }
     .panel.dragging .panel-head { cursor: grabbing; }
-    .panel.collapsed .panel-head { border-bottom: 0; }
+    .panel.collapsed .panel-head {
+      min-height: 37px;
+      padding: 5px 6px 5px 10px;
+      border-bottom: 0;
+    }
     .panel.collapsed .body { display: none; }
     .panel.collapsed .panel-footer { display: none; }
     .panel-title,
@@ -218,14 +222,45 @@
       height: 25px;
       padding: 0;
       place-items: center;
-      border: 1px solid rgba(255, 255, 255, 0.11);
-      border-radius: 2px;
-      background: rgba(0, 0, 0, 0.16);
-      color: #b9c2bd;
+      border: 1px solid rgba(236, 203, 124, 0.7);
+      border-radius: 999px;
+      background: rgba(236, 203, 124, 0.12);
+      color: #f0d49a;
       font: 16px/1 Georgia, serif;
       cursor: pointer;
+      transition:
+        background 120ms ease,
+        border-color 120ms ease,
+        color 120ms ease;
     }
-    .collapse:hover { border-color: rgba(220, 184, 101, 0.55); color: #ffe1a3; }
+    .collapse:hover {
+      border-color: #f2d68f;
+      background: rgba(236, 203, 124, 0.26);
+      color: #fff0c7;
+    }
+    .panel.collapsed .collapse {
+      display: flex;
+      width: auto;
+      min-width: 0;
+      height: 27px;
+      padding: 0 10px;
+      gap: 5px;
+      border: 1px solid rgba(236, 203, 124, 0.85);
+      border-radius: 999px;
+      background: rgba(236, 203, 124, 0.14);
+      color: #f6d996;
+      box-shadow: 0 0 0 3px rgba(236, 203, 124, 0.08);
+    }
+    .panel.collapsed .collapse::after {
+      content: "展开";
+      font: 700 12px/1 "Microsoft YaHei UI", sans-serif;
+      letter-spacing: 0.5px;
+    }
+    .panel.collapsed .collapse:hover {
+      border-color: #f2d68f;
+      background: rgba(236, 203, 124, 0.26);
+      color: #fff0c7;
+    }
     .collapse:focus-visible,
     .refresh:focus-visible,
     select:focus-visible,
